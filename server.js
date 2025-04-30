@@ -353,7 +353,69 @@ app.post('/send-pdf-base64', async (req, res) => {
         res.status(500).send({ error: err.message });
     }
 });
+app.post('/send-image-base64', async (req, res) => {
+    const { userId, number, message, imageBase64, filename, mimeType } = req.body;
 
+    if (!userId || !number || !message || !imageBase64 || !mimeType) {
+        return res.status(400).send({ error: 'userId, number, message, imageBase64, and mimeType are required' });
+    }
+
+    async function ensureClientReady() {
+        if (!sessions[userId]) {
+            if (sessionExists(userId)) {
+                console.log(`[${userId}] Session exists. Creating client...`);
+                createClient(userId);
+            } else {
+                console.log(`[${userId}] No session found. Starting session...`);
+                createClient(userId);
+            }
+        }
+
+        const session = sessions[userId];
+
+        if (session.ready) {
+            return session.client;
+        }
+
+        return new Promise((resolve, reject) => {
+            const interval = setInterval(() => {
+                if (sessions[userId] && sessions[userId].ready) {
+                    clearInterval(interval);
+                    resolve(sessions[userId].client);
+                }
+            }, 1000);
+
+            setTimeout(() => {
+                clearInterval(interval);
+                reject(new Error('Timeout: Client not ready after waiting.'));
+            }, 15000);
+        });
+    }
+
+    try {
+        const client = await ensureClientReady();
+        if (!client) throw new Error('Client not initialized properly');
+
+        const cleanNumber = number.replace(/\D/g, '');
+        if (cleanNumber.length < 10) {
+            return res.status(400).send({ error: 'Invalid phone number' });
+        }
+
+        const chatId = cleanNumber + '@c.us';
+
+        console.log(`[${userId}] Preparing image to send via base64...`);
+
+        const media = new MessageMedia(mimeType, imageBase64, filename || 'image.jpg');
+
+        await client.sendMessage(chatId, media, { caption: message });
+
+        res.send({ status: 'Image (base64) and message sent' });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: err.message });
+    }
+});
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
