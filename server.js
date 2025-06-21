@@ -23,7 +23,8 @@ function createClient(userId) {
         ready: false,
         lastQR: null,
         initializing: true, // To know if init is happening
-        timeout: null
+        timeout: null,
+        lastActivity: Date.now(),
     };
     sessions[userId].timeout = setTimeout(() => {
     if (!sessions[userId].ready) {
@@ -143,12 +144,13 @@ app.get('/check-login/:userId', (req, res) => {
 
 // API to send message
 app.post('/send-message', async (req, res) => {
+    
     const { userId, number, message } = req.body;
 
     if (!userId || !number || !message) {
         return res.status(400).send({ error: 'userId, number, and message are required' });
     }
-
+    sessions[userId].lastActivity = Date.now();
     async function ensureClientReady() {
         // Check if session exists
         if (!sessions[userId]) {
@@ -221,7 +223,7 @@ app.post('/send-pdf-url', async (req, res) => {
     if (!userId || !number || !message || !pdfUrl) {
         return res.status(400).send({ error: 'userId, number, message, and pdfUrl are required' });
     }
-
+    sessions[userId].lastActivity = Date.now();
     async function ensureClientReady() {
         // Check if session exists
         if (!sessions[userId]) {
@@ -301,7 +303,7 @@ app.post('/send-pdf-base64', async (req, res) => {
     if (!userId || !number || !message || !pdfBase64) {
         return res.status(400).send({ error: 'userId, number, message, and pdfBase64 are required' });
     }
-
+    sessions[userId].lastActivity = Date.now();
     async function ensureClientReady() {
         if (!sessions[userId]) {
             if (sessionExists(userId)) {
@@ -367,7 +369,7 @@ app.post('/send-pdf-base64', async (req, res) => {
 });
 app.post('/send-image-base64', async (req, res) => {
     const { userId, number, message, imageBase64, filename, mimeType } = req.body;
-
+    sessions[userId].lastActivity = Date.now();
     if (!userId || !number || !message || !imageBase64 || !mimeType) {
         return res.status(400).send({ error: 'userId, number, message, imageBase64, and mimeType are required' });
     }
@@ -428,6 +430,20 @@ app.post('/send-image-base64', async (req, res) => {
         res.status(500).send({ error: err.message });
     }
 });
+setInterval(() => {
+    const now = Date.now();
+    const IDLE_LIMIT = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+    for (const userId in sessions) {
+        const session = sessions[userId];
+
+        if (session.ready && now - session.lastActivity > IDLE_LIMIT) {
+            console.log(`[${userId}] Session idle for 5 minutes. Destroying...`);
+            session.client.destroy();
+            delete sessions[userId];
+        }
+    }
+}, 5*60 * 1000); // Check every 1 minute
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
