@@ -23,8 +23,15 @@ function createClient(userId) {
         ready: false,
         lastQR: null,
         initializing: true, // To know if init is happening
+        timeout: null
     };
-
+    sessions[userId].timeout = setTimeout(() => {
+    if (!sessions[userId].ready) {
+        console.warn(`[${userId}] Auto-destroying idle session (not logged in)`);
+        client.destroy();
+        delete sessions[userId];
+    }
+    }, 2 * 60 * 1000); // 2 minutes
     client.on('qr', (qr) => {
         console.log(`[${userId}] QR generated`);
         sessions[userId].lastQR = qr;
@@ -36,6 +43,11 @@ function createClient(userId) {
         sessions[userId].ready = true;
         sessions[userId].lastQR = null;
         sessions[userId].initializing = false;
+
+        if (sessions[userId].timeout) {
+        clearTimeout(sessions[userId].timeout);
+        sessions[userId].timeout = null;
+    }
     });
 
     client.on('authenticated', () => {
